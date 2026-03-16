@@ -95,6 +95,9 @@ class ClassificationResult(BaseModel):
     explanation: str
     what_this_tells_us: str
     uncertainty_note: str
+    sample_compatible: bool
+    compatibility_score: float
+    compatibility_reason: str
 
 
 class ExtractedFeatures(BaseModel):

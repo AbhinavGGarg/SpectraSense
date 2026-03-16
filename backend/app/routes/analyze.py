@@ -25,6 +25,16 @@ VALID_MODES = {
 }
 
 
+def _quality_gate(vector: dict[str, float]) -> str | None:
+    if vector["intensity_std"] < 0.025:
+        return "Image appears too uniform. Please capture a clearer sample region with visible texture/color variation."
+    if vector["intensity_mean"] < 0.08 or vector["intensity_mean"] > 0.93:
+        return "Image lighting is too dark or too overexposed. Please retake in neutral lighting."
+    if max(vector["mean_r"], vector["mean_g"], vector["mean_b"]) < 0.09:
+        return "Sample region is too dim for analysis. Increase lighting and try again."
+    return None
+
+
 @router.get("/health")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok", "service": "spectrasense-backend"}
@@ -49,8 +59,14 @@ async def analyze_sample(file: UploadFile = File(...), mode: str = Form("plant_h
 
     processed = preprocess_image(loaded.bgr)
     features = extract_features(processed.rgb_roi)
+    quality_error = _quality_gate(features.vector_for_model)
+    if quality_error:
+        raise HTTPException(status_code=422, detail=quality_error)
+
     spectral_curve = approximate_spectral_curve(features.vector_for_model)
     classification = classify_sample(features.vector_for_model, mode)
+    if not classification.sample_compatible:
+        raise HTTPException(status_code=422, detail=classification.compatibility_reason)
 
     roi_height, roi_width = processed.rgb_roi.shape[:2]
 

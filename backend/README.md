@@ -38,11 +38,17 @@ Returns structured response with:
 - top reference matches
 - explanation, uncertainty note, and limitations
 
+Possible `422` responses include:
+
+- image quality too low / too dark / overexposed
+- sample appears outside the selected mode (plant, water, food, tablet)
+
 ## Run
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+export ALLOWED_ORIGINS="http://localhost:3000,https://your-frontend.vercel.app"
 uvicorn app.main:app --reload --port 8000
 ```
