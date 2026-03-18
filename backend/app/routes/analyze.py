@@ -35,6 +35,62 @@ def _quality_gate(vector: dict[str, float]) -> str | None:
     return None
 
 
+def _mode_relevance_gate(vector: dict[str, float], mode: str) -> str | None:
+    saturation = float(vector["s_mean"])
+    intensity_mean = float(vector["intensity_mean"])
+    intensity_std = float(vector["intensity_std"])
+    rg_ratio = float(vector["rg_ratio"])
+    rb_ratio = float(vector["rb_ratio"])
+    gb_ratio = float(vector["gb_ratio"])
+
+    if mode == "plant_health":
+        if saturation < 0.26:
+            return (
+                "Analyze failed: this image does not look like a plant-health sample in this MVP pipeline. "
+                "Use a leaf-focused image with richer pigment variation."
+            )
+        if intensity_mean < 0.18 or intensity_mean > 0.82:
+            return "Analyze failed: plant sample exposure is outside usable range. Retake under neutral lighting."
+        return None
+
+    if mode == "water_sample":
+        if saturation > 0.30:
+            return (
+                "Analyze failed: this image appears too saturated for a water-focused optical profile. "
+                "Use a clearer water sample frame."
+            )
+        if intensity_std > 0.16 or intensity_mean > 0.58:
+            return (
+                "Analyze failed: this image does not match expected water-texture/brightness characteristics. "
+                "Retake with the water region filling most of the frame."
+            )
+        return None
+
+    if mode == "food_freshness":
+        if saturation < 0.28:
+            return (
+                "Analyze failed: this image is too low-saturation for food-freshness screening. "
+                "Capture the food item closer with better color visibility."
+            )
+        if intensity_mean < 0.2 or intensity_mean > 0.86:
+            return "Analyze failed: food sample lighting is outside usable range for this MVP."
+        return None
+
+    if mode == "medicine_tablet":
+        if saturation > 0.24:
+            return (
+                "Analyze failed: this image appears too color-saturated for tablet profile matching. "
+                "Use a well-lit close shot of a tablet on a neutral background."
+            )
+        if intensity_mean < 0.58:
+            return "Analyze failed: tablet sample appears too dark for reliable screening in this MVP."
+        if max(abs(rg_ratio - 1.0), abs(rb_ratio - 1.0), abs(gb_ratio - 1.0)) > 0.16:
+            return "Analyze failed: tablet color balance is outside expected profile range. Re-capture under neutral lighting."
+        return None
+
+    return "Analyze failed: unsupported analysis mode."
+
+
 @router.get("/health")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok", "service": "spectrasense-backend"}
@@ -62,6 +118,10 @@ async def analyze_sample(file: UploadFile = File(...), mode: str = Form("plant_h
     quality_error = _quality_gate(features.vector_for_model)
     if quality_error:
         raise HTTPException(status_code=422, detail=quality_error)
+
+    relevance_error = _mode_relevance_gate(features.vector_for_model, mode)
+    if relevance_error:
+        raise HTTPException(status_code=422, detail=relevance_error)
 
     spectral_curve = approximate_spectral_curve(features.vector_for_model)
     classification = classify_sample(features.vector_for_model, mode)
